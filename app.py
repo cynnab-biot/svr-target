@@ -244,7 +244,7 @@ if chembl_id:
     if df is not None and not df.empty:
         st.header(f"Bioactivity Data for {chembl_id}")
         st.write(f"Found {len(df)} activities.")
-        st.dataframe(df.head()) # Display a preview of the raw data
+
 
         # Add export button
         csv = df.to_csv(index=False).encode('utf-8')
