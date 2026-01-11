@@ -5,3 +5,4 @@ scikit-learn
 chembl_webresource_client
 rdkit
 matplotlib
+tqdm

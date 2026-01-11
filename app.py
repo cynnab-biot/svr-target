@@ -9,6 +9,7 @@ from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+from tqdm import tqdm
 import altair as alt
 
 # --- Page Configuration ---
@@ -25,7 +26,7 @@ st.set_page_config(
 def get_bioactivities(chembl_id):
     """Fetches bioactivity data from ChEMBL for a given target ID."""
     try:
-        st.info("Starting data fetch from ChEMBL...") #TODO: Fix issue 
+        st.info(f"Fetching bioactivity data from ChEMBL for target ID: {chembl_id}") 
         activity = new_client.activity
         res = activity.filter(target_chembl_id=chembl_id, standard_type__in=["IC50", "Ki", "EC50"])
         df = pd.DataFrame(res)
@@ -140,10 +141,11 @@ def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_t
     scatter = alt.Chart(plot_df).mark_circle(size=60).encode(
         x=alt.X('Actual pIC50', scale=alt.Scale(domain=[min_val, max_val])),
         y=alt.Y('Predicted pIC50', scale=alt.Scale(domain=[min_val, max_val])),
-        color=alt.Color('In Tube:N', scale=alt.Scale(
-            domain=[True, False],
-            range=['#2E86C1', '#E74C3C'] # Blue for in tube, red for out
-        ), legend=alt.Legend(title="Inside SVR Tube")),
+        color=alt.condition(
+            alt.datum.Flexibility > 0,
+            alt.Color('Flexibility:Q', scale=alt.Scale(scheme='viridis'), legend=alt.Legend(title="Flexibility")),
+            alt.value('lightgray')
+        ),
         tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility']
     ).interactive()
 
@@ -211,17 +213,13 @@ if chembl_id:
             if len(X) > 10:
                 df_filtered = df_processed.iloc[valid_indices].copy()
                 
-                # Calculate flexibility
-                with st.spinner("Calculating 3D flexibility scores..."):
-                    df_filtered['Flexibility'] = df_filtered['canonical_smiles'].apply(calculate_flexibility)
-
-                st.dataframe(df_filtered[['molecule_chembl_id', 'canonical_smiles', 'standard_type', 'standard_value', 'pIC50', 'Flexibility']].head())
-                
                 y = df_filtered['pIC50'].values
                 
                 # Perform KMeans clustering
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10) # Set n_init to suppress warning
                 df_filtered['Cluster'] = kmeans.fit_predict(X)
+
+                st.dataframe(df_filtered[['molecule_chembl_id', 'canonical_smiles', 'standard_type', 'standard_value', 'pIC50']].head())
                 
                 # Split data while keeping track of molecule info
                 X_train, X_test, df_train, df_test = train_test_split(X, df_filtered, test_size=0.2, random_state=42)
@@ -250,9 +248,21 @@ if chembl_id:
                     'Prediction Error': np.abs(y_test - y_pred),
                     'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
                     'SMILES': df_test['canonical_smiles'],
-                    'Cluster': df_test['Cluster'],
-                    'Flexibility': df_test['Flexibility']
+                    'Cluster': df_test['Cluster']
                 })
+
+                # Sort by predicted potency and get top 100
+                plot_df_sorted = plot_df.sort_values(by='Predicted pIC50', ascending=False)
+                top_100_df = plot_df_sorted.head(100)
+
+                # Calculate flexibility for top 100
+                with st.spinner("Calculating 3D flexibility scores for top 100 predictions..."):
+                    top_100_smiles = top_100_df['SMILES'].tolist()
+                    flexibility_scores = [calculate_flexibility(smiles) for smiles in top_100_smiles]
+                    
+                    # Use .loc to safely assign values to the new column
+                    plot_df['Flexibility'] = np.nan
+                    plot_df.loc[top_100_df.index, 'Flexibility'] = flexibility_scores
 
                 st.header("Bioactivity Landscape Visualization")
                 
