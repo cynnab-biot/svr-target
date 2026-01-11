@@ -1,7 +1,0 @@
-streamlit run app.py
-
-Starting data fetch from ChEMBL...
-
-An error occurred while fetching data from ChEMBL: AlertMixin.info() takes 2 positional arguments but 3 were given
-
-No bioactivity data found for the given ChEMBL ID.

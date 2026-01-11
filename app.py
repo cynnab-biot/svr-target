@@ -27,7 +27,7 @@ def get_bioactivities(chembl_id):
         activity = new_client.activity
         res = activity.filter(target_chembl_id=chembl_id, standard_type__in=["IC50", "Ki", "EC50"])
         df = pd.DataFrame(res)
-        st.info("Fetched data:", df.shape)
+        st.info(f"Fetched data: {df.shape}")
         return df
     except Exception as e:
         st.error(f"An error occurred while fetching data from ChEMBL: {e}")
