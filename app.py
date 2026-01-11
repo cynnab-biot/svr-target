@@ -106,11 +106,13 @@ def get_top_n_similar_to_centroids(X_fingerprints, df_molecules, kmeans_model, n
     """
     selected_compounds = []
     
-    # Calculate how many compounds to select per cluster
     num_clusters = kmeans_model.n_clusters
     compounds_per_cluster = num_to_select // num_clusters
     remainder = num_to_select % num_clusters
 
+    # Reset index to ensure positional indexing aligns with X_fingerprints (X_test)
+    df_molecules = df_molecules.reset_index(drop=True)
+    
     for i, centroid in enumerate(kmeans_model.cluster_centers_):
         # Convert centroid to an RDKit ExplicitBitVect for similarity calculation
         centroid_fp = DataStructs.CreateFromBitString(''.join(centroid.astype(int).astype(str)))
@@ -178,8 +180,12 @@ def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_t
     scatter = alt.Chart(plot_df).mark_circle(size=60).encode(
         x=alt.X('Actual pIC50', scale=alt.Scale(domain=[min_val, max_val])),
         y=alt.Y('Predicted pIC50', scale=alt.Scale(domain=[min_val, max_val])),
-        color=alt.Color('Flexibility_Category:N', legend=alt.Legend(title="Flexibility Category")),
-        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility_Category']
+        color=alt.condition(
+            alt.FieldOneOfPredicate(field='Flexibility_Category', oneOf=['Higher Flexibility', 'Lower Flexibility']),
+            alt.Color('Flexibility_Category:N', title='Flexibility (Top 100)'),
+            alt.Color('Similarity_to_Centroid:Q', scale=alt.Scale(scheme='viridis'), title='Similarity to Centroid')
+        ),
+        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility_Category', 'Similarity_to_Centroid']
     ).interactive()
 
     return y_x_line + tube_upper + tube_lower + scatter
@@ -227,6 +233,16 @@ if chembl_id:
     if df is not None and not df.empty:
         st.header(f"Bioactivity Data for {chembl_id}")
         st.write(f"Found {len(df)} activities.")
+        st.dataframe(df.head()) # Display a preview of the raw data
+
+        # Add export button
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Bioactivity Data as CSV",
+            data=csv,
+            file_name=f'bioactivity_data_{chembl_id}.csv',
+            mime='text/csv',
+        )
         
         df_processed = preprocess_data(df.copy())
         
@@ -279,10 +295,27 @@ if chembl_id:
                     'Actual pIC50': y_test,
                     'Predicted pIC50': y_pred,
                     'Prediction Error': np.abs(y_test - y_pred),
-                    'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
-                    'SMILES': df_test['canonical_smiles'],
-                    'Cluster': df_test['Cluster']
+                    'Molecule ChEMBL ID': df_test['molecule_chembl_id'].reset_index(drop=True), # Align index with y_test/y_pred
+                    'SMILES': df_test['canonical_smiles'].reset_index(drop=True), # Align index
+                    'Cluster': df_test['Cluster'].reset_index(drop=True) # Align index
                 })
+                
+                # Calculate Similarity to Centroid for ALL test set compounds
+                plot_df['Similarity_to_Centroid'] = np.nan
+                for i in range(kmeans.n_clusters):
+                    centroid = kmeans.cluster_centers_[i]
+                    centroid_fp = DataStructs.CreateFromBitString(''.join(centroid.astype(int).astype(str)))
+                    
+                    # Get positional indices of molecules belonging to the current cluster in plot_df
+                    cluster_positional_indices = plot_df[plot_df['Cluster'] == i].index
+                    
+                    for pos_idx in cluster_positional_indices:
+                        fp_array = X_test[pos_idx] # This is now correct as plot_df has 0-based index
+                        mol_fp = DataStructs.CreateFromBitString(''.join(fp_array.astype(int).astype(str)))
+                        
+                        sim = DataStructs.TanimotoSimilarity(centroid_fp, mol_fp)
+                        plot_df.loc[idx_in_plot_df, 'Similarity_to_Centroid'] = sim
+
 
                 # Select top 100 compounds based on similarity to cluster centroids
                 top_100_df = get_top_n_similar_to_centroids(X_test, df_test, kmeans, num_to_select=100)
