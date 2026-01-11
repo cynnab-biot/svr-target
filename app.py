@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from chembl_webresource_client.new_client import new_client
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem import rdFingerprintGenerator
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, r2_score
@@ -48,7 +48,8 @@ def preprocess_data(df):
 def generate_fingerprints(smiles_list):
     """Generates Morgan fingerprints from a list of SMILES strings."""
     mols = [Chem.MolFromSmiles(s) for s in smiles_list]
-    fingerprints = [AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=1024) for m in mols if m is not None]
+    morgan_gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=1024)
+    fingerprints = [morgan_gen.GetFingerprint(m) for m in mols if m is not None]
     return np.array(fingerprints)
 
 def plot_predictions(y_true, y_pred, thresholds):
@@ -140,6 +141,13 @@ if chembl_id:
                 col2.metric("RMSE", f"{rmse:.3f}")
                 
                 st.header("Prediction Visualization")
+                
+                st.markdown("""
+                The scatter plot below shows the relationship between the actual p-values and the SVR model's predicted p-values.
+                
+                - **The y=x line (dashed black line)** represents a perfect prediction. Points closer to this line indicate more accurate predictions.
+                - **The colored dashed lines** represent the activity thresholds you defined. These can help in visually assessing the model's ability to distinguish between active and inactive compounds.
+                """)
                 
                 thresholds = {
                     active_threshold: "g",
