@@ -124,17 +124,19 @@ def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_t
     # Create the y=x line and SVR tube
     min_val = plot_df[['Actual pIC50', 'Predicted pIC50']].min().min()
     max_val = plot_df[['Actual pIC50', 'Predicted pIC50']].max().max()
-    line_data = pd.DataFrame({'x': [min_val, max_val]})
+    line_df = pd.DataFrame({'vals': [min_val, max_val]})
+    line_df['upper'] = line_df['vals'] + epsilon
+    line_df['lower'] = line_df['vals'] - epsilon
     
-    y_x_line = alt.Chart(line_data).mark_line(color='black', strokeDash=[3,3]).encode(x='x', y='x')
+    y_x_line = alt.Chart(line_df).mark_line(color='black', strokeDash=[3,3]).encode(x='vals', y='vals')
     
-    tube_upper = alt.Chart(line_data).mark_line(color='gray').encode(
-        x='x',
-        y=alt.datum.x + epsilon
+    tube_upper = alt.Chart(line_df).mark_line(color='gray').encode(
+        x='vals',
+        y='upper'
     )
-    tube_lower = alt.Chart(line_data).mark_line(color='gray').encode(
-        x='x',
-        y=alt.datum.x - epsilon
+    tube_lower = alt.Chart(line_df).mark_line(color='gray').encode(
+        x='vals',
+        y='lower'
     )
 
     # Create the scatter plot of points
