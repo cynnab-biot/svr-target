@@ -169,7 +169,7 @@ if chembl_id:
                     tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pValue', 'Predicted pValue', 'Prediction Error']
                 ).interactive()
                 
-                st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(chart, width='stretch')
 
             else:
                 st.warning("Could not generate valid fingerprints for enough molecules to train a model.")
