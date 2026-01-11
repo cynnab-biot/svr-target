@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from chembl_webresource_client.new_client import new_client
-from rdkit import Chem
+from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator, AllChem, Descriptors3D
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVR
@@ -91,6 +91,57 @@ def calculate_flexibility(smiles):
     npr1 = pmi1 / pmi3
     return npr1
 
+def get_top_n_similar_to_centroids(X_fingerprints, df_molecules, kmeans_model, num_to_select=100):
+    """
+    Selects top N compounds based on similarity to cluster centroids.
+    
+    Args:
+        X_fingerprints (np.array): Morgan fingerprints for the molecules.
+        df_molecules (pd.DataFrame): DataFrame containing molecule information (e.g., SMILES, pIC50).
+        kmeans_model (KMeans): Trained KMeans model.
+        num_to_select (int): Total number of compounds to select across all clusters.
+
+    Returns:
+        pd.DataFrame: DataFrame of selected top compounds.
+    """
+    selected_compounds = []
+    
+    # Calculate how many compounds to select per cluster
+    num_clusters = kmeans_model.n_clusters
+    compounds_per_cluster = num_to_select // num_clusters
+    remainder = num_to_select % num_clusters
+
+    for i, centroid in enumerate(kmeans_model.cluster_centers_):
+        # Convert centroid to an RDKit ExplicitBitVect for similarity calculation
+        centroid_fp = DataStructs.CreateFromBitString(''.join(centroid.astype(int).astype(str)))
+        
+        # Filter molecules belonging to the current cluster
+        cluster_indices = df_molecules[df_molecules['Cluster'] == i].index
+        
+        # Ensure cluster_fingerprints are actual fingerprints, not just indices
+        # We need the original fingerprints from X_fingerprints that correspond to cluster_indices
+        cluster_fps_from_X = X_fingerprints[cluster_indices]
+        
+        cluster_df = df_molecules.loc[cluster_indices].copy()
+
+        similarities = []
+        for fp_array in cluster_fps_from_X:
+            mol_fp = DataStructs.CreateFromBitString(''.join(fp_array.astype(int).astype(str)))
+            similarities.append(DataStructs.TanimotoSimilarity(centroid_fp, mol_fp))
+        
+        # Add similarities to the cluster DataFrame
+        cluster_df = cluster_df.copy() # Avoid SettingWithCopyWarning
+        cluster_df['Similarity_to_Centroid'] = similarities
+        
+        # Sort by similarity and select top N
+        current_cluster_top_n = compounds_per_cluster + (1 if i < remainder else 0)
+        top_n_df = cluster_df.sort_values(by='Similarity_to_Centroid', ascending=False).head(current_cluster_top_n)
+        selected_compounds.append(top_n_df)
+            
+    if selected_compounds:
+        return pd.concat(selected_compounds)
+    else:
+        return pd.DataFrame()
 
 def run_pca(fingerprints):
     """Performs PCA on fingerprints to reduce to 2 dimensions."""
@@ -233,9 +284,8 @@ if chembl_id:
                     'Cluster': df_test['Cluster']
                 })
 
-                # Sort by predicted potency and get top 100
-                plot_df_sorted = plot_df.sort_values(by='Predicted pIC50', ascending=False)
-                top_100_df = plot_df_sorted.head(100)
+                # Select top 100 compounds based on similarity to cluster centroids
+                top_100_df = get_top_n_similar_to_centroids(X_test, df_test, kmeans, num_to_select=100)
 
                 # Calculate flexibility for top 100
                 with st.spinner("Calculating 3D flexibility scores for top 100 predictions..."):
