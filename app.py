@@ -69,10 +69,62 @@ def run_pca(fingerprints):
     pca = PCA(n_components=2)
     return pca.fit_transform(fingerprints)
 
+def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_threshold):
+    """Creates an interactive SVR performance plot with tube and potency regions."""
+    
+    # Add a column to indicate if a point is inside the tube
+    plot_df['In Tube'] = np.abs(plot_df['Actual pIC50'] - plot_df['Predicted pIC50']) < epsilon
+
+    # Create the background potency regions
+    potency_regions = pd.DataFrame([
+        {"x": -1, "x2": low_potency_threshold, "y": -1, "y2": 15, "Potency": "Low"},
+        {"x": low_potency_threshold, "x2": high_potency_threshold, "y": -1, "y2": 15, "Potency": "Medium"},
+        {"x": high_potency_threshold, "x2": 15, "y": -1, "y2": 15, "Potency": "High"},
+    ])
+    
+    background = alt.Chart(potency_regions).mark_rect().encode(
+        x='x:Q',
+        x2='x2:Q',
+        y='y:Q',
+        y2='y2:Q',
+        color=alt.Color('Potency:N', scale=alt.Scale(
+            domain=['Low', 'Medium', 'High'],
+            range=['#FADBD8', '#FDEBD0', '#D5F5E3'] # Light red, yellow, green
+        ), legend=alt.Legend(title="Potency Region"))
+    )
+
+    # Create the y=x line and SVR tube
+    min_val = plot_df[['Actual pIC50', 'Predicted pIC50']].min().min()
+    max_val = plot_df[['Actual pIC50', 'Predicted pIC50']].max().max()
+    line_data = pd.DataFrame({'x': [min_val, max_val]})
+    
+    y_x_line = alt.Chart(line_data).mark_line(color='black', strokeDash=[3,3]).encode(x='x', y='x')
+    
+    tube_upper = alt.Chart(line_data).mark_line(color='gray').encode(
+        x='x',
+        y=alt.datum.x + epsilon
+    )
+    tube_lower = alt.Chart(line_data).mark_line(color='gray').encode(
+        x='x',
+        y=alt.datum.x - epsilon
+    )
+
+    # Create the scatter plot of points
+    scatter = alt.Chart(plot_df).mark_circle(size=60).encode(
+        x=alt.X('Actual pIC50', scale=alt.Scale(domain=[min_val, max_val])),
+        y=alt.Y('Predicted pIC50', scale=alt.Scale(domain=[min_val, max_val])),
+        color=alt.Color('In Tube:N', scale=alt.Scale(
+            domain=[True, False],
+            range=['#2E86C1', '#E74C3C'] # Blue for in tube, red for out
+        ), legend=alt.Legend(title="Inside SVR Tube")),
+        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error']
+    ).interactive()
+
+    return background + y_x_line + tube_upper + tube_lower + scatter
+
 # --- Streamlit App ---
 
 st.title("✨ Potency Estimation with SVR: Structure-Activity Landscape")
-
 st.markdown("""
 This application evaluates how well a Support Vector Regression (SVR) model can estimate and rank the potency of compounds based solely on their chemical structure (Morgan fingerprints).
 
@@ -154,6 +206,16 @@ if chembl_id:
                 col1.metric("R-squared (R²)", f"{r2:.3f}")
                 col2.metric("RMSE", f"{rmse:.3f}")
                 
+                # Create a DataFrame for plotting
+                plot_df = pd.DataFrame({
+                    'Actual pIC50': y_test,
+                    'Predicted pIC50': y_pred,
+                    'Prediction Error': np.abs(y_test - y_pred),
+                    'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
+                    'SMILES': df_test['canonical_smiles'],
+                    'Cluster': clusters[valid_indices][df_test.index.to_numpy()] # Get cluster for test set molecules
+                })
+
                 st.header("Bioactivity Landscape Visualization")
                 
                 st.markdown("""
@@ -168,19 +230,10 @@ if chembl_id:
                 # Run PCA on the test set fingerprints
                 pca_result = run_pca(X_test)
                 
-                # Create a DataFrame for plotting
-                plot_df = pd.DataFrame({
-                    'PC1': pca_result[:, 0],
-                    'PC2': pca_result[:, 1],
-                    'Actual pIC50': y_test,
-                    'Predicted pIC50': y_pred,
-                    'Prediction Error': np.abs(y_test - y_pred),
-                    'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
-                    'SMILES': df_test['canonical_smiles'],
-                    'Cluster': clusters[valid_indices][df_test.index.to_numpy()] # Get cluster for test set molecules
-                })
+                plot_df['PC1'] = pca_result[:, 0]
+                plot_df['PC2'] = pca_result[:, 1]
                 
-                chart = alt.Chart(plot_df).mark_circle().encode(
+                chart_landscape = alt.Chart(plot_df).mark_circle().encode(
                     x='PC1',
                     y='PC2',
                     color=alt.Color('Cluster:N', scale=alt.Scale(scheme='category')), # 'N' for nominal data
@@ -188,7 +241,21 @@ if chembl_id:
                     tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Cluster']
                 ).interactive()
                 
-                st.altair_chart(chart, width='stretch')
+                st.altair_chart(chart_landscape, width='stretch')
+
+                st.header("SVR Performance Analysis")
+
+                st.markdown("""
+                The scatter plot below shows the relationship between the actual and predicted pIC50 values.
+                
+                - The **black dashed line** is the y=x line, representing a perfect prediction.
+                - The **gray lines** represent the SVR 'tube' (defined by the `epsilon` parameter). Points inside this tube have zero prediction error according to the SVR model's loss function.
+                - The **background colors** indicate the potency regions (low, medium, high).
+                - The **point colors** show whether a prediction was inside (blue) or outside (red) the SVR tube.
+                """)
+                
+                chart_svr = plot_svr_performance(plot_df.copy(), epsilon, active_threshold, inactive_threshold)
+                st.altair_chart(chart_svr, width='stretch')
 
             else:
                 st.warning("Could not generate valid fingerprints for enough molecules to train a model.")
