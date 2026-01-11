@@ -11,6 +11,7 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 import altair as alt
+import signal
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -22,13 +23,23 @@ st.set_page_config(
 
 # --- Functions ---
 
+def handler(signum, frame):
+    raise Exception("ChEMBL API request timed out after 60 seconds.")
+
 @st.cache_data
 def get_bioactivities(chembl_id):
     """Fetches bioactivity data from ChEMBL for a given target ID."""
     try:
         st.info(f"Fetching bioactivity data from ChEMBL for target ID: {chembl_id}") 
         activity = new_client.activity
+        
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(60) # 60 seconds timeout
+        
         res = activity.filter(target_chembl_id=chembl_id, standard_type__in=["IC50", "Ki", "EC50"])
+        
+        signal.alarm(0) # Disable the alarm
+
         df = pd.DataFrame(res)
         
         # Select only the columns we need to avoid caching issues with unhashable types
