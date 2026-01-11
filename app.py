@@ -184,7 +184,7 @@ if chembl_id:
                 
                 # Perform KMeans clustering
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10) # Set n_init to suppress warning
-                clusters = kmeans.fit_predict(X)
+                df_filtered['Cluster'] = kmeans.fit_predict(X)
                 
                 # Split data while keeping track of molecule info
                 X_train, X_test, df_train, df_test = train_test_split(X, df_filtered, test_size=0.2, random_state=42)
@@ -213,7 +213,7 @@ if chembl_id:
                     'Prediction Error': np.abs(y_test - y_pred),
                     'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
                     'SMILES': df_test['canonical_smiles'],
-                    'Cluster': clusters[valid_indices][df_test.index.to_numpy()] # Get cluster for test set molecules
+                    'Cluster': df_test['Cluster']
                 })
 
                 st.header("Bioactivity Landscape Visualization")
