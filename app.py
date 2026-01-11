@@ -103,23 +103,7 @@ def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_t
     # Add a column to indicate if a point is inside the tube
     plot_df['In Tube'] = np.abs(plot_df['Actual pIC50'] - plot_df['Predicted pIC50']) < epsilon
 
-    # Create the background potency regions
-    potency_regions = pd.DataFrame([
-        {"x": -1, "x2": low_potency_threshold, "y": -1, "y2": 15, "Potency": "Low"},
-        {"x": low_potency_threshold, "x2": high_potency_threshold, "y": -1, "y2": 15, "Potency": "Medium"},
-        {"x": high_potency_threshold, "x2": 15, "y": -1, "y2": 15, "Potency": "High"},
-    ])
-    
-    background = alt.Chart(potency_regions).mark_rect().encode(
-        x='x:Q',
-        x2='x2:Q',
-        y='y:Q',
-        y2='y2:Q',
-        color=alt.Color('Potency:N', scale=alt.Scale(
-            domain=['Low', 'Medium', 'High'],
-            range=['#FADBD8', '#FDEBD0', '#D5F5E3'] # Light red, yellow, green
-        ), legend=alt.Legend(title="Potency Region"))
-    )
+
 
     # Create the y=x line and SVR tube
     min_val = plot_df[['Actual pIC50', 'Predicted pIC50']].min().min()
@@ -143,15 +127,11 @@ def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_t
     scatter = alt.Chart(plot_df).mark_circle(size=60).encode(
         x=alt.X('Actual pIC50', scale=alt.Scale(domain=[min_val, max_val])),
         y=alt.Y('Predicted pIC50', scale=alt.Scale(domain=[min_val, max_val])),
-        color=alt.condition(
-            alt.datum.Flexibility > 0,
-            alt.Color('Flexibility:Q', scale=alt.Scale(scheme='viridis'), legend=alt.Legend(title="Flexibility")),
-            alt.value('lightgray')
-        ),
-        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility']
+        color=alt.Color('Flexibility_Category:N', legend=alt.Legend(title="Flexibility Category")),
+        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility_Category']
     ).interactive()
 
-    return background + y_x_line + tube_upper + tube_lower + scatter
+    return y_x_line + tube_upper + tube_lower + scatter
 
 # --- Streamlit App ---
 
@@ -265,6 +245,28 @@ if chembl_id:
                     # Use .loc to safely assign values to the new column
                     plot_df['Flexibility'] = np.nan
                     plot_df.loc[top_100_df.index, 'Flexibility'] = flexibility_scores
+
+                # Aggregate Flexibility per Cluster for the top 100 and categorize
+                # Filter for compounds where flexibility was actually calculated
+                flex_calculated_df = plot_df.loc[top_100_df.index].copy()
+                
+                if not flex_calculated_df.empty:
+                    cluster_flex_avg = flex_calculated_df.groupby('Cluster')['Flexibility'].mean().reset_index()
+                    median_flex = cluster_flex_avg['Flexibility'].median()
+                    
+                    cluster_flex_avg['Flexibility_Category'] = cluster_flex_avg['Flexibility'].apply(
+                        lambda x: "Higher Flexibility" if x >= median_flex else "Lower Flexibility"
+                    )
+                    
+                    # Merge this back into the main plot_df
+                    plot_df = plot_df.merge(
+                        cluster_flex_avg[['Cluster', 'Flexibility_Category']], 
+                        on='Cluster', 
+                        how='left'
+                    )
+                else:
+                    plot_df['Flexibility_Category'] = 'No Flexibility Data'
+
 
                 st.header("Bioactivity Landscape Visualization")
                 
