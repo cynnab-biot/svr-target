@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from chembl_webresource_client.new_client import new_client
 from rdkit import Chem
-from rdkit.Chem import rdFingerprintGenerator, AllChem, Descriptors
+from rdkit.Chem import rdFingerprintGenerator, AllChem, Descriptors3D
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, r2_score
@@ -80,8 +80,14 @@ def calculate_flexibility(smiles):
         return None
 
     cid = cids[0]
-    pmi = Descriptors.CalcPMI(mol, confId=cid)
-    npr1 = pmi[0] / pmi[2]
+    pmi1 = Descriptors3D.PMI1(mol, confId=cid)
+    pmi2 = Descriptors3D.PMI2(mol, confId=cid)
+    pmi3 = Descriptors3D.PMI3(mol, confId=cid)
+    
+    if pmi3 == 0:
+        return 0
+
+    npr1 = pmi1 / pmi3
     return npr1
 
 
