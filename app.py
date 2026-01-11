@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from chembl_webresource_client.new_client import new_client
 from rdkit import Chem
-from rdkit.Chem import rdFingerprintGenerator
+from rdkit.Chem import rdFingerprintGenerator, AllChem, Descriptors
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, r2_score
@@ -64,6 +64,27 @@ def generate_fingerprints(smiles_list):
     
     return np.array(fingerprints), valid_indices
 
+def calculate_flexibility(smiles):
+    """
+    Calculates a 3D flexibility score for a molecule.
+    Generates a single conformer and computes the Normalized Principal Moments Ratio (NPR).
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    mol = Chem.AddHs(mol)
+    cids = AllChem.EmbedMultipleConfs(mol, numConfs=1, params=AllChem.ETKDG())
+    
+    if len(cids) == 0:
+        return None
+
+    cid = cids[0]
+    pmi = Descriptors.CalcPMI(mol, confId=cid)
+    npr1 = pmi[0] / pmi[2]
+    return npr1
+
+
 def run_pca(fingerprints):
     """Performs PCA on fingerprints to reduce to 2 dimensions."""
     pca = PCA(n_components=2)
@@ -117,7 +138,7 @@ def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_t
             domain=[True, False],
             range=['#2E86C1', '#E74C3C'] # Blue for in tube, red for out
         ), legend=alt.Legend(title="Inside SVR Tube")),
-        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error']
+        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility']
     ).interactive()
 
     return background + y_x_line + tube_upper + tube_lower + scatter
@@ -171,7 +192,6 @@ if chembl_id:
         st.write(f"After preprocessing, {len(df_processed)} activities remain.")
         
         if len(df_processed) > 10:
-            st.dataframe(df_processed[['molecule_chembl_id', 'canonical_smiles', 'standard_type', 'standard_value', 'pIC50']].head())
             
             # --- Model Training ---
             smiles = df_processed['canonical_smiles'].tolist()
@@ -179,7 +199,14 @@ if chembl_id:
             X, valid_indices = generate_fingerprints(smiles)
             
             if len(X) > 10:
-                df_filtered = df_processed.iloc[valid_indices]
+                df_filtered = df_processed.iloc[valid_indices].copy()
+                
+                # Calculate flexibility
+                with st.spinner("Calculating 3D flexibility scores..."):
+                    df_filtered['Flexibility'] = df_filtered['canonical_smiles'].apply(calculate_flexibility)
+
+                st.dataframe(df_filtered[['molecule_chembl_id', 'canonical_smiles', 'standard_type', 'standard_value', 'pIC50', 'Flexibility']].head())
+                
                 y = df_filtered['pIC50'].values
                 
                 # Perform KMeans clustering
@@ -213,7 +240,8 @@ if chembl_id:
                     'Prediction Error': np.abs(y_test - y_pred),
                     'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
                     'SMILES': df_test['canonical_smiles'],
-                    'Cluster': df_test['Cluster']
+                    'Cluster': df_test['Cluster'],
+                    'Flexibility': df_test['Flexibility']
                 })
 
                 st.header("Bioactivity Landscape Visualization")
@@ -238,7 +266,7 @@ if chembl_id:
                     y='PC2',
                     color=alt.Color('Cluster:N', scale=alt.Scale(scheme='category')), # 'N' for nominal data
                     size=alt.Size('Prediction Error', scale=alt.Scale(range=[50, 500])),
-                    tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Cluster']
+                    tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Cluster', 'Flexibility']
                 ).interactive()
                 
                 st.altair_chart(chart_landscape, width='stretch')
