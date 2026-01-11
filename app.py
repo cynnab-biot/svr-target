@@ -23,9 +23,11 @@ st.set_page_config(
 def get_bioactivities(chembl_id):
     """Fetches bioactivity data from ChEMBL for a given target ID."""
     try:
+        st.info("Starting data fetch from ChEMBL...") #TODO: Fix issue 
         activity = new_client.activity
         res = activity.filter(target_chembl_id=chembl_id, standard_type__in=["IC50", "Ki", "EC50"])
         df = pd.DataFrame(res)
+        st.info("Fetched data:", df.shape)
         return df
     except Exception as e:
         st.error(f"An error occurred while fetching data from ChEMBL: {e}")
@@ -86,7 +88,7 @@ Enter a ChEMBL Target ID to get started.
 # --- Sidebar ---
 with st.sidebar:
     st.header("1. Target Selection")
-    chembl_id = st.text_input("Enter ChEMBL Target ID", "CHEMBL220") # EGFR as default
+    chembl_id = st.text_input("Enter ChEMBL Target ID", "CHEMBL1907589") # AChR as default
     
     st.header("2. SVR Parameters")
     C = st.slider("C (Regularization parameter)", 0.1, 10.0, 1.0)
