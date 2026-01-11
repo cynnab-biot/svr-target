@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 import altair as alt
 
 # --- Page Configuration ---
@@ -85,8 +86,11 @@ with st.sidebar:
     st.header("2. SVR Parameters")
     C = st.slider("C (Regularization parameter)", 0.1, 10.0, 1.0)
     epsilon = st.slider("Epsilon", 0.1, 1.0, 0.2)
+
+    st.header("3. Clustering Parameters")
+    n_clusters = st.slider("Number of Clusters (KMeans)", 2, 10, 4)
     
-    st.header("3. Visualization Thresholds")
+    st.header("4. Visualization Thresholds")
     st.write("Define pValue thresholds for activity.")
     active_threshold = st.number_input("Active Threshold (e.g., > 7)", value=7.0)
     inactive_threshold = st.number_input("Inactive Threshold (e.g., < 5)", value=5.0)
@@ -116,6 +120,10 @@ if chembl_id:
                 df_filtered = df_processed.iloc[valid_indices]
                 y = df_filtered['p_value'].values
                 
+                # Perform KMeans clustering
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10) # Set n_init to suppress warning
+                clusters = kmeans.fit_predict(X)
+                
                 # Split data while keeping track of molecule info
                 X_train, X_test, df_train, df_test = train_test_split(X, df_filtered, test_size=0.2, random_state=42)
                 y_train = df_train['p_value'].values
@@ -142,8 +150,8 @@ if chembl_id:
                 The scatter plot below visualizes the chemical space of the test set molecules, reduced to two dimensions using PCA on the Morgan fingerprints. 
                 Each point represents a molecule.
                 
-                - **Color** corresponds to the predicted p-value.
-                - **Size** corresponds to the prediction error (absolute difference between actual and predicted p-values). Larger points are less accurate predictions.
+                - **Color** indicates the cluster each molecule belongs to, based on KMeans clustering of their Morgan fingerprints. This helps in visualizing groups of chemically similar compounds.
+                - **Size** corresponds to the prediction error (absolute difference between actual and predicted p-values). Larger points are less accurate predictions, potentially falling outside the SVR model's 'epsilon tube'.
                 - **Hover** over a point to see more details about the molecule.
                 """)
 
@@ -158,15 +166,16 @@ if chembl_id:
                     'Predicted pValue': y_pred,
                     'Prediction Error': np.abs(y_test - y_pred),
                     'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
-                    'SMILES': df_test['canonical_smiles']
+                    'SMILES': df_test['canonical_smiles'],
+                    'Cluster': clusters[valid_indices][df_test.index.to_numpy()] # Get cluster for test set molecules
                 })
                 
                 chart = alt.Chart(plot_df).mark_circle().encode(
                     x='PC1',
                     y='PC2',
-                    color=alt.Color('Predicted pValue', scale=alt.Scale(scheme='viridis')),
+                    color=alt.Color('Cluster:N', scale=alt.Scale(scheme='category')), # 'N' for nominal data
                     size=alt.Size('Prediction Error', scale=alt.Scale(range=[50, 500])),
-                    tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pValue', 'Predicted pValue', 'Prediction Error']
+                    tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pValue', 'Predicted pValue', 'Prediction Error', 'Cluster']
                 ).interactive()
                 
                 st.altair_chart(chart, width='stretch')
