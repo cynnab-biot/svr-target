@@ -28,6 +28,10 @@ def get_bioactivities(chembl_id):
         activity = new_client.activity
         res = activity.filter(target_chembl_id=chembl_id, standard_type__in=["IC50", "Ki", "EC50"])
         df = pd.DataFrame(res)
+        
+        # Select only the columns we need to avoid caching issues with unhashable types
+        df = df[['molecule_chembl_id', 'canonical_smiles', 'standard_type', 'standard_value']]
+        
         st.info(f"Fetched data: {df.shape}")
         return df
     except Exception as e:
