@@ -46,9 +46,9 @@ def preprocess_data(df):
     df = df[df['canonical_smiles'].notna()]
     
     # Calculate pX (pIC50, pKi, etc.)
-    df['p_value'] = -np.log10(pd.to_numeric(df['standard_value'], errors='coerce') * 1e-9)
+    df['pIC50'] = -np.log10(pd.to_numeric(df['standard_value'], errors='coerce') * 1e-9)
     
-    df = df.dropna(subset=['p_value'])
+    df = df.dropna(subset=['pIC50'])
     return df
 
 def generate_fingerprints(smiles_list):
@@ -71,11 +71,21 @@ def run_pca(fingerprints):
 
 # --- Streamlit App ---
 
-st.title("🔬 SVR Bioactivity Dashboard")
+st.title("✨ Potency Estimation with SVR: Structure-Activity Landscape")
 
 st.markdown("""
-This app trains a Support Vector Regression (SVR) model on ChEMBL bioactivity data.
-Enter a ChEMBL Target ID to get started.
+This application evaluates how well a Support Vector Regression (SVR) model can estimate and rank the potency of compounds based solely on their chemical structure (Morgan fingerprints).
+
+**Understanding pIC50 (Potency Measure):**
+- **pIC50** is a common measure of drug potency. It is the negative logarithm of the IC50 value (IC50 is the concentration of an inhibitor where the response is reduced by half).
+- **Higher pIC50 values** indicate greater potency (a lower concentration is needed to achieve half-maximal inhibition).
+- **Lower pIC50 values** indicate lower potency.
+- **Scale interpretation:**
+    - **High Potency:** pIC50 > 7 (e.g., IC50 < 100 nM)
+    - **Medium Potency:** pIC50 between 5 and 7 (e.g., IC50 between 100 nM and 10 µM)
+    - **Low Potency:** pIC50 < 5 (e.g., IC50 > 10 µM)
+
+Enter a ChEMBL Target ID to get started and explore the structure-activity relationship!
 """)
 
 # --- Sidebar ---
@@ -109,7 +119,7 @@ if chembl_id:
         st.write(f"After preprocessing, {len(df_processed)} activities remain.")
         
         if len(df_processed) > 10:
-            st.dataframe(df_processed[['molecule_chembl_id', 'canonical_smiles', 'standard_type', 'standard_value', 'p_value']].head())
+            st.dataframe(df_processed[['molecule_chembl_id', 'canonical_smiles', 'standard_type', 'standard_value', 'pIC50']].head())
             
             # --- Model Training ---
             smiles = df_processed['canonical_smiles'].tolist()
@@ -118,7 +128,7 @@ if chembl_id:
             
             if len(X) > 10:
                 df_filtered = df_processed.iloc[valid_indices]
-                y = df_filtered['p_value'].values
+                y = df_filtered['pIC50'].values
                 
                 # Perform KMeans clustering
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10) # Set n_init to suppress warning
@@ -126,8 +136,8 @@ if chembl_id:
                 
                 # Split data while keeping track of molecule info
                 X_train, X_test, df_train, df_test = train_test_split(X, df_filtered, test_size=0.2, random_state=42)
-                y_train = df_train['p_value'].values
-                y_test = df_test['p_value'].values
+                y_train = df_train['pIC50'].values
+                y_test = df_test['pIC50'].values
 
                 svr = SVR(C=C, epsilon=epsilon)
                 svr.fit(X_train, y_train)
@@ -162,8 +172,8 @@ if chembl_id:
                 plot_df = pd.DataFrame({
                     'PC1': pca_result[:, 0],
                     'PC2': pca_result[:, 1],
-                    'Actual pValue': y_test,
-                    'Predicted pValue': y_pred,
+                    'Actual pIC50': y_test,
+                    'Predicted pIC50': y_pred,
                     'Prediction Error': np.abs(y_test - y_pred),
                     'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
                     'SMILES': df_test['canonical_smiles'],
@@ -175,7 +185,7 @@ if chembl_id:
                     y='PC2',
                     color=alt.Color('Cluster:N', scale=alt.Scale(scheme='category')), # 'N' for nominal data
                     size=alt.Size('Prediction Error', scale=alt.Scale(range=[50, 500])),
-                    tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pValue', 'Predicted pValue', 'Prediction Error', 'Cluster']
+                    tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Cluster']
                 ).interactive()
                 
                 st.altair_chart(chart, width='stretch')
