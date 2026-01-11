@@ -7,7 +7,8 @@ from rdkit.Chem import rdFingerprintGenerator
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, r2_score
-import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+import altair as alt
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -46,36 +47,22 @@ def preprocess_data(df):
     return df
 
 def generate_fingerprints(smiles_list):
-    """Generates Morgan fingerprints from a list of SMILES strings."""
+    """
+    Generates Morgan fingerprints from a list of SMILES strings.
+    Returns a tuple of (fingerprints, valid_indices).
+    """
     mols = [Chem.MolFromSmiles(s) for s in smiles_list]
+    valid_indices = [i for i, mol in enumerate(mols) if mol is not None]
+    
     morgan_gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=1024)
-    fingerprints = [morgan_gen.GetFingerprint(m) for m in mols if m is not None]
-    return np.array(fingerprints)
-
-def plot_predictions(y_true, y_pred, thresholds):
-    """Creates a 'tube plot' of predicted vs. actual values with thresholds."""
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fingerprints = [morgan_gen.GetFingerprint(mols[i]) for i in valid_indices]
     
-    ax.scatter(y_true, y_pred, alpha=0.5)
-    
-    # Plot y=x line
-    lims = [
-        np.min([ax.get_xlim(), ax.get_ylim()]),
-        np.max([ax.get_xlim(), ax.get_ylim()]),
-    ]
-    ax.plot(lims, lims, 'k--', alpha=0.75, zorder=0)
+    return np.array(fingerprints), valid_indices
 
-    # Plot thresholds
-    for threshold, color in thresholds.items():
-        ax.axhline(y=threshold, color=color, linestyle='--')
-        ax.axvline(x=threshold, color=color, linestyle='--')
-
-    ax.set_xlabel("Actual pValue")
-    ax.set_ylabel("Predicted pValue")
-    ax.set_title("SVR Model Predictions vs. Actual Values")
-    ax.grid(True)
-    
-    return fig
+def run_pca(fingerprints):
+    """Performs PCA on fingerprints to reduce to 2 dimensions."""
+    pca = PCA(n_components=2)
+    return pca.fit_transform(fingerprints)
 
 # --- Streamlit App ---
 
@@ -118,13 +105,18 @@ if chembl_id:
             
             # --- Model Training ---
             smiles = df_processed['canonical_smiles'].tolist()
-            y = df_processed['p_value'].values
             
-            X = generate_fingerprints(smiles)
+            X, valid_indices = generate_fingerprints(smiles)
             
-            if len(X) == len(y):
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            if len(X) > 10:
+                df_filtered = df_processed.iloc[valid_indices]
+                y = df_filtered['p_value'].values
                 
+                # Split data while keeping track of molecule info
+                X_train, X_test, df_train, df_test = train_test_split(X, df_filtered, test_size=0.2, random_state=42)
+                y_train = df_train['p_value'].values
+                y_test = df_test['p_value'].values
+
                 svr = SVR(C=C, epsilon=epsilon)
                 svr.fit(X_train, y_train)
                 
@@ -140,24 +132,43 @@ if chembl_id:
                 col1.metric("R-squared (R²)", f"{r2:.3f}")
                 col2.metric("RMSE", f"{rmse:.3f}")
                 
-                st.header("Prediction Visualization")
+                st.header("Bioactivity Landscape Visualization")
                 
                 st.markdown("""
-                The scatter plot below shows the relationship between the actual p-values and the SVR model's predicted p-values.
+                The scatter plot below visualizes the chemical space of the test set molecules, reduced to two dimensions using PCA on the Morgan fingerprints. 
+                Each point represents a molecule.
                 
-                - **The y=x line (dashed black line)** represents a perfect prediction. Points closer to this line indicate more accurate predictions.
-                - **The colored dashed lines** represent the activity thresholds you defined. These can help in visually assessing the model's ability to distinguish between active and inactive compounds.
+                - **Color** corresponds to the predicted p-value.
+                - **Size** corresponds to the prediction error (absolute difference between actual and predicted p-values). Larger points are less accurate predictions.
+                - **Hover** over a point to see more details about the molecule.
                 """)
+
+                # Run PCA on the test set fingerprints
+                pca_result = run_pca(X_test)
                 
-                thresholds = {
-                    active_threshold: "g",
-                    inactive_threshold: "r"
-                }
+                # Create a DataFrame for plotting
+                plot_df = pd.DataFrame({
+                    'PC1': pca_result[:, 0],
+                    'PC2': pca_result[:, 1],
+                    'Actual pValue': y_test,
+                    'Predicted pValue': y_pred,
+                    'Prediction Error': np.abs(y_test - y_pred),
+                    'Molecule ChEMBL ID': df_test['molecule_chembl_id'],
+                    'SMILES': df_test['canonical_smiles']
+                })
                 
-                fig = plot_predictions(y_test, y_pred, thresholds)
-                st.pyplot(fig)
+                chart = alt.Chart(plot_df).mark_circle().encode(
+                    x='PC1',
+                    y='PC2',
+                    color=alt.Color('Predicted pValue', scale=alt.Scale(scheme='viridis')),
+                    size=alt.Size('Prediction Error', scale=alt.Scale(range=[50, 500])),
+                    tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pValue', 'Predicted pValue', 'Prediction Error']
+                ).interactive()
+                
+                st.altair_chart(chart, use_container_width=True)
+
             else:
-                st.warning("Could not generate fingerprints for all molecules. The number of fingerprints does not match the number of activities.")
+                st.warning("Could not generate valid fingerprints for enough molecules to train a model.")
         
         else:
             st.warning("Not enough data to train a model. Please choose a target with more activities.")
