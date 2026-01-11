@@ -333,7 +333,7 @@ if chembl_id:
 
                 # Calculate flexibility for top 100
                 with st.spinner("Calculating 3D flexibility scores for top 100 predictions..."):
-                    top_100_smiles = top_100_df['SMILES'].tolist()
+                    top_100_smiles = top_100_df['canonical_smiles'].tolist()
                     flexibility_scores = [calculate_flexibility(smiles) for smiles in top_100_smiles]
                     
                     # Use .loc to safely assign values to the new column
