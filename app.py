@@ -314,7 +314,7 @@ if chembl_id:
                         mol_fp = DataStructs.CreateFromBitString(''.join(fp_array.astype(int).astype(str)))
                         
                         sim = DataStructs.TanimotoSimilarity(centroid_fp, mol_fp)
-                        plot_df.loc[idx_in_plot_df, 'Similarity_to_Centroid'] = sim
+                        plot_df.loc[pos_idx, 'Similarity_to_Centroid'] = sim
 
 
                 # Select top 100 compounds based on similarity to cluster centroids
