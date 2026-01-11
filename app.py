@@ -284,7 +284,7 @@ if chembl_id:
                 chart_landscape = alt.Chart(plot_df).mark_circle().encode(
                     x='PC1',
                     y='PC2',
-                    color=alt.Color('Cluster:N', scale=alt.Scale(scheme='category')), # 'N' for nominal data
+                    color=alt.Color('Cluster:N', scale=alt.Scale(scheme='category10')), # 'N' for nominal data
                     size=alt.Size('Prediction Error', scale=alt.Scale(range=[50, 500])),
                     tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Cluster', 'Flexibility']
                 ).interactive()
