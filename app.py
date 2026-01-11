@@ -196,6 +196,10 @@ if chembl_id:
         df_processed = preprocess_data(df.copy())
         
         st.write(f"After preprocessing, {len(df_processed)} activities remain.")
+
+        if len(df_processed) > 100:
+            st.info("ℹ️ Demo Mode: Using only the first 100 molecules for faster processing.")
+            df_processed = df_processed.head(100)
         
         if len(df_processed) > 10:
             
