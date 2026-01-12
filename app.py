@@ -177,16 +177,28 @@ def plot_svr_performance(plot_df, epsilon, high_potency_threshold, low_potency_t
     )
 
     # Create the scatter plot of points
-    scatter = alt.Chart(plot_df).mark_circle(size=60).encode(
+    # Split the DataFrame for conditional coloring
+    top_100_plot_df = plot_df[plot_df['Flexibility_Category'].notna()]
+    rest_plot_df = plot_df[plot_df['Flexibility_Category'].isna()]
+
+    # Scatter plot for top 100 (colored by Flexibility)
+    scatter_top_100 = alt.Chart(top_100_plot_df).mark_circle(size=60).encode(
         x=alt.X('Actual pIC50', scale=alt.Scale(domain=[min_val, max_val])),
         y=alt.Y('Predicted pIC50', scale=alt.Scale(domain=[min_val, max_val])),
-        color=alt.condition(
-            alt.FieldOneOfPredicate(field='Flexibility_Category', oneOf=['Higher Flexibility', 'Lower Flexibility']),
-            alt.Color('Flexibility_Category:N', title='Flexibility (Top 100)'),
-            alt.Color('Similarity_to_Centroid:Q', scale=alt.Scale(scheme='viridis'), title='Similarity to Centroid')
-        ),
+        color=alt.Color('Flexibility_Category:N', title='Flexibility (Top 100)'),
         tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility_Category', 'Similarity_to_Centroid']
     ).interactive()
+
+    # Scatter plot for the rest (colored by Similarity)
+    scatter_rest = alt.Chart(rest_plot_df).mark_circle(size=60).encode(
+        x=alt.X('Actual pIC50', scale=alt.Scale(domain=[min_val, max_val])),
+        y=alt.Y('Predicted pIC50', scale=alt.Scale(domain=[min_val, max_val])),
+        color=alt.Color('Similarity_to_Centroid:Q', scale=alt.Scale(scheme='viridis'), title='Similarity to Centroid'),
+        tooltip=['Molecule ChEMBL ID', 'SMILES', 'Actual pIC50', 'Predicted pIC50', 'Prediction Error', 'Flexibility_Category', 'Similarity_to_Centroid']
+    ).interactive()
+
+    scatter = scatter_top_100 + scatter_rest
+
 
     return y_x_line + tube_upper + tube_lower + scatter
 
